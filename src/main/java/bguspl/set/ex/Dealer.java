@@ -2,7 +2,9 @@ package bguspl.set.ex;
 
 import bguspl.set.Env;
 
+import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -10,6 +12,13 @@ import java.util.stream.IntStream;
  * This class manages the dealer's threads and data
  */
 public class Dealer implements Runnable {
+
+    /**
+     * Vars WE ADDED!
+     */
+    private Thread[] playersThreads;
+    private long startTime;
+    public static List<LinkedList<Integer>> legalSetCheckList;
 
     /**
      * The game environment object.
@@ -42,7 +51,17 @@ public class Dealer implements Runnable {
         this.table = table;
         this.players = players;
         deck = IntStream.range(0, env.config.deckSize).boxed().collect(Collectors.toList());
+
+        // Vars we added:
+        this.legalSetCheckList = new LinkedList<LinkedList<Integer>>();
+        this.playersThreads = new Thread[players.length];
+        this.startTime = Long.MAX_VALUE;
     }
+
+
+    /*
+     * Methods WE ADDED!
+     */
 
     /**
      * The dealer thread starts here (main loop for the dealer thread).
@@ -50,6 +69,13 @@ public class Dealer implements Runnable {
     @Override
     public void run() {
         env.logger.info("thread " + Thread.currentThread().getName() + " starting.");
+        env.ui.setCountdown(env.config.turnTimeoutMillis, false); //We started the game with 60 seconds on the clock
+
+        for (int i = 0; i < players.length; i++) {
+            Thread playerThread = new Thread(players[i], "Player " + players[i].id);
+            playersThreads[i] = playerThread;
+            playerThread.start();
+        }
         while (!shouldFinish()) {
             placeCardsOnTable();
             timerLoop();
@@ -61,7 +87,8 @@ public class Dealer implements Runnable {
     }
 
     /**
-     * The inner loop of the dealer thread that runs as long as the countdown did not time out.
+     * The inner loop of the dealer thread that runs as long as the countdown did
+     * not time out.
      */
     private void timerLoop() {
         while (!terminate && System.currentTimeMillis() < reshuffleTime) {
@@ -100,10 +127,26 @@ public class Dealer implements Runnable {
      */
     private void placeCardsOnTable() {
         // TODO implement
+        if (startTime == Long.MAX_VALUE) // Game started
+        {
+            int cardsNeeded = env.config.tableSize - table.countCards();
+            List<Integer> positions = new LinkedList<Integer>();
+
+            for (int i = 0; i < cardsNeeded; i++)
+                positions.add(i);
+            for (int i = 0; i < cardsNeeded; i++) {
+                if (deck.size() > 0) {
+                    int cardId = deck.get(i);
+                    int randomPosition = ThreadLocalRandom.current().nextInt(0, positions.size()); // Random position
+                    table.placeCard(cardId, positions.remove(randomPosition));
+                }
+            }
+        }
     }
 
     /**
-     * Sleep for a fixed amount of time or until the thread is awakened for some purpose.
+     * Sleep for a fixed amount of time or until the thread is awakened for some
+     * purpose.
      */
     private void sleepUntilWokenOrTimeout() {
         // TODO implement
@@ -114,6 +157,13 @@ public class Dealer implements Runnable {
      */
     private void updateTimerDisplay(boolean reset) {
         // TODO implement
+        long timeNow = System.currentTimeMillis();
+        if (startTime == Long.MAX_VALUE) {
+            reshuffleTime = env.config.turnTimeoutMillis;
+            startTime = timeNow;
+        }
+        reshuffleTime = env.config.turnTimeoutMillis - (timeNow - startTime);
+        env.ui.setCountdown(reshuffleTime, false);
     }
 
     /**

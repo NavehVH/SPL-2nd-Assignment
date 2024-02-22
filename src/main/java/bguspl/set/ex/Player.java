@@ -1,5 +1,8 @@
 package bguspl.set.ex;
 
+import java.util.LinkedList;
+import java.util.List;
+
 import bguspl.set.Env;
 
 /**
@@ -9,6 +12,12 @@ import bguspl.set.Env;
  * @inv score >= 0
  */
 public class Player implements Runnable {
+
+    /**
+     * Vars WE ADDED!
+     */
+    private List<Integer> playerTokensCardsList;
+    private List<Integer> playerActionsList;
 
     /**
      * The game environment object.
@@ -64,6 +73,10 @@ public class Player implements Runnable {
         this.table = table;
         this.id = id;
         this.human = human;
+
+        //Vars we added:
+        this.playerTokensCardsList = new LinkedList<Integer>();
+        this.playerActionsList = new LinkedList<Integer>();
     }
 
     /**
@@ -77,6 +90,22 @@ public class Player implements Runnable {
 
         while (!terminate) {
             // TODO implement main player loop
+            while (!playerActionsList.isEmpty()) {
+                int currentCard = playerTokensCardsList.get(0);
+                if (playerTokensCardsList.contains(currentCard)) {
+                    table.removeCard(table.cardToSlot[currentCard]);
+                    playerTokensCardsList.remove(playerTokensCardsList.indexOf(currentCard));
+                } 
+                else {
+                    if (playerTokensCardsList.size() < env.config.featureSize) {
+                        table.placeToken(this.id, table.cardToSlot[currentCard]);
+                        playerTokensCardsList.add(currentCard);
+                    }
+                }
+                if (playerTokensCardsList.size() == env.config.featureSize) {
+                    Dealer.legalSetCheckList.add(new LinkedList<Integer>(playerTokensCardsList));
+                }
+            }
         }
         if (!human) try { aiThread.join(); } catch (InterruptedException ignored) {}
         env.logger.info("thread " + Thread.currentThread().getName() + " terminated.");
@@ -115,6 +144,12 @@ public class Player implements Runnable {
      */
     public void keyPressed(int slot) {
         // TODO implement
+        //if (!playerActionsList.contains(table.slotToCard[slot])) {
+            if (playerActionsList.size() >= env.config.featureSize)
+                return;
+
+                playerActionsList.add(table.slotToCard[slot]);
+        //}
     }
 
     /**
