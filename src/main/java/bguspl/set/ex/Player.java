@@ -18,6 +18,7 @@ public class Player implements Runnable {
      */
     private List<Integer> playerTokensCardsList;
     private List<Integer> playerActionsList;
+    private Dealer dealer;
 
     /**
      * The game environment object.
@@ -75,6 +76,7 @@ public class Player implements Runnable {
         this.human = human;
 
         //Vars we added:
+        this.dealer = dealer;
         this.playerTokensCardsList = new LinkedList<Integer>();
         this.playerActionsList = new LinkedList<Integer>();
     }
@@ -103,8 +105,14 @@ public class Player implements Runnable {
                     }
                 }
                 if (playerTokensCardsList.size() == env.config.featureSize) { //Notify the dealer and wait until the dealder checks if it is a legal set or not
-                    Dealer.legalSetCheckList.add(new LinkedList<Integer>(playerTokensCardsList));
-                    
+                    synchronized(dealer) {
+                        Dealer.legalSetCheckList.add(new LinkedList<Integer>(playerTokensCardsList));
+                        Dealer.legalSetOrderList.add(this.id);
+
+                        try {
+                            dealer.wait();
+                        } catch(InterruptedException e) {};
+                    } 
                 }
             }
         }
@@ -164,6 +172,10 @@ public class Player implements Runnable {
 
         int ignored = table.countCards(); // this part is just for demonstration in the unit tests
         env.ui.setScore(id, ++score);
+        env.ui.setFreeze(this.id, env.config.pointFreezeMillis);
+        try {
+            Thread.sleep(env.config.pointFreezeMillis);
+        } catch (InterruptedException e) {}
     }
 
     /**
@@ -171,6 +183,10 @@ public class Player implements Runnable {
      */
     public void penalty() {
         // TODO implement
+        env.ui.setFreeze(this.id, env.config.penaltyFreezeMillis);
+        try {
+            Thread.sleep(env.config.penaltyFreezeMillis);
+        } catch (InterruptedException e) {}
     }
 
     public int score() {

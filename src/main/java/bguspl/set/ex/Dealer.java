@@ -2,6 +2,7 @@ package bguspl.set.ex;
 
 import bguspl.set.Env;
 
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -19,6 +20,7 @@ public class Dealer implements Runnable {
     private Thread[] playersThreads;
     private long startTime;
     public static List<LinkedList<Integer>> legalSetCheckList;
+    public static List<Integer> legalSetOrderList;
 
     /**
      * The game environment object.
@@ -54,10 +56,10 @@ public class Dealer implements Runnable {
 
         // Vars we added:
         this.legalSetCheckList = new LinkedList<LinkedList<Integer>>();
+        this.legalSetOrderList = new LinkedList<Integer>();
         this.playersThreads = new Thread[players.length];
         this.startTime = Long.MAX_VALUE;
     }
-
 
     /*
      * Methods WE ADDED!
@@ -69,7 +71,7 @@ public class Dealer implements Runnable {
     @Override
     public void run() {
         env.logger.info("thread " + Thread.currentThread().getName() + " starting.");
-        env.ui.setCountdown(env.config.turnTimeoutMillis, false); //We started the game with 60 seconds on the clock
+        env.ui.setCountdown(env.config.turnTimeoutMillis, false); // We started the game with 60 seconds on the clock
 
         for (int i = 0; i < players.length; i++) {
             Thread playerThread = new Thread(players[i], "Player " + players[i].id);
@@ -120,6 +122,44 @@ public class Dealer implements Runnable {
      */
     private void removeCardsFromTable() {
         // TODO implement
+
+        //synchronized (table) {
+            if (legalSetOrderList.isEmpty())
+                return;
+            System.out.println("hi");
+            for (int i = 0; i < legalSetCheckList.size(); i++) {
+                List<Integer> set = legalSetCheckList.get(i);
+                Integer[] cardsArrInteger = set.toArray(new Integer[set.size()]); // convert list to array
+                int[] cardTokens = Arrays.stream(cardsArrInteger).mapToInt(Integer::intValue).toArray();
+                if (!env.util.testSet(cardTokens)) {
+                    players[legalSetOrderList.get(i)].penalty();
+                    System.out.println("BAD");
+                }
+                else {
+                    System.out.println("GOOD");
+                }
+            }
+
+            for (LinkedList<Integer> set : legalSetCheckList) {
+                Integer[] cardsArrInteger = set.toArray(new Integer[set.size()]); // convert list to array
+                int[] cardTokens = Arrays.stream(cardsArrInteger).mapToInt(Integer::intValue).toArray();
+                if (set.size() < env.config.featureSize) {
+                    continue;
+                }
+                if (env.util.testSet(cardTokens)) {
+                    for (int card : cardTokens) {
+                        env.ui.removeTokens(table.cardToSlot[card]);
+
+                        for (int i = 0; i < legalSetCheckList.size(); i++) {
+                            if (legalSetCheckList.get(i).contains(card)) {
+                                legalSetCheckList.get(i).remove(legalSetCheckList.get(i).indexOf(card));
+                            }
+                        }
+                    }
+                }
+            }
+            legalSetCheckList.clear();
+        //}
     }
 
     /**
