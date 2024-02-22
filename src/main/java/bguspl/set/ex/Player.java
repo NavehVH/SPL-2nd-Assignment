@@ -91,9 +91,9 @@ public class Player implements Runnable {
         while (!terminate) {
             // TODO implement main player loop
             while (!playerActionsList.isEmpty()) {
-                int currentCard = playerTokensCardsList.get(0);
+                int currentCard = playerActionsList.remove(0);
                 if (playerTokensCardsList.contains(currentCard)) {
-                    table.removeCard(table.cardToSlot[currentCard]);
+                    table.removeToken(this.id, table.cardToSlot[currentCard]);
                     playerTokensCardsList.remove(playerTokensCardsList.indexOf(currentCard));
                 } 
                 else {
@@ -102,8 +102,9 @@ public class Player implements Runnable {
                         playerTokensCardsList.add(currentCard);
                     }
                 }
-                if (playerTokensCardsList.size() == env.config.featureSize) {
+                if (playerTokensCardsList.size() == env.config.featureSize) { //Notify the dealer and wait until the dealder checks if it is a legal set or not
                     Dealer.legalSetCheckList.add(new LinkedList<Integer>(playerTokensCardsList));
+                    
                 }
             }
         }
