@@ -55,8 +55,8 @@ public class Dealer implements Runnable {
         deck = IntStream.range(0, env.config.deckSize).boxed().collect(Collectors.toList());
 
         // Vars we added:
-        this.legalSetCheckList = new LinkedList<LinkedList<Integer>>();
-        this.legalSetOrderList = new LinkedList<Integer>();
+        legalSetCheckList = new LinkedList<LinkedList<Integer>>();
+        legalSetOrderList = new LinkedList<Integer>();
         this.playersThreads = new Thread[players.length];
         this.startTime = Long.MAX_VALUE;
     }
@@ -64,6 +64,10 @@ public class Dealer implements Runnable {
     /*
      * Methods WE ADDED!
      */
+
+    public Thread[] getPlayersThreads() {
+        return this.playersThreads;
+    }
 
     /**
      * The dealer thread starts here (main loop for the dealer thread).
@@ -126,21 +130,21 @@ public class Dealer implements Runnable {
         //synchronized (table) {
             if (legalSetOrderList.isEmpty())
                 return;
-            System.out.println("hi");
             for (int i = 0; i < legalSetCheckList.size(); i++) {
                 List<Integer> set = legalSetCheckList.get(i);
                 Integer[] cardsArrInteger = set.toArray(new Integer[set.size()]); // convert list to array
                 int[] cardTokens = Arrays.stream(cardsArrInteger).mapToInt(Integer::intValue).toArray();
                 if (!env.util.testSet(cardTokens)) {
+                    for (int card : set) {
+                        table.removeToken(legalSetOrderList.get(i), table.cardToSlot[card]);
+                    }
+                    players[legalSetOrderList.get(i)].getPlayerTokensCardsList().clear();
                     players[legalSetOrderList.get(i)].penalty();
-                    System.out.println("BAD");
-                }
-                else {
-                    System.out.println("GOOD");
                 }
             }
 
-            for (LinkedList<Integer> set : legalSetCheckList) {
+            for (int i = 0; i < legalSetCheckList.size(); i++) {
+                List<Integer> set = legalSetCheckList.get(i);
                 Integer[] cardsArrInteger = set.toArray(new Integer[set.size()]); // convert list to array
                 int[] cardTokens = Arrays.stream(cardsArrInteger).mapToInt(Integer::intValue).toArray();
                 if (set.size() < env.config.featureSize) {
@@ -149,16 +153,18 @@ public class Dealer implements Runnable {
                 if (env.util.testSet(cardTokens)) {
                     for (int card : cardTokens) {
                         env.ui.removeTokens(table.cardToSlot[card]);
+                        players[legalSetOrderList.get(i)].getPlayerTokensCardsList().clear();
 
-                        for (int i = 0; i < legalSetCheckList.size(); i++) {
-                            if (legalSetCheckList.get(i).contains(card)) {
-                                legalSetCheckList.get(i).remove(legalSetCheckList.get(i).indexOf(card));
+                        for (int j = 0; j < legalSetCheckList.size(); j++) {
+                            if (legalSetCheckList.get(j).contains(card)) {
+                                legalSetCheckList.get(j).remove(legalSetCheckList.get(j).indexOf(card));
                             }
                         }
                     }
                 }
             }
             legalSetCheckList.clear();
+            legalSetOrderList.clear();
         //}
     }
 
@@ -199,11 +205,10 @@ public class Dealer implements Runnable {
         // TODO implement
         long timeNow = System.currentTimeMillis();
         if (startTime == Long.MAX_VALUE) {
-            reshuffleTime = env.config.turnTimeoutMillis;
+            reshuffleTime = env.config.turnTimeoutMillis + System.currentTimeMillis();
             startTime = timeNow;
         }
-        reshuffleTime = env.config.turnTimeoutMillis - (timeNow - startTime);
-        env.ui.setCountdown(reshuffleTime, false);
+        env.ui.setCountdown(reshuffleTime - System.currentTimeMillis(), false);
     }
 
     /**

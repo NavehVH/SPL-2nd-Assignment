@@ -41,7 +41,8 @@ public class Player implements Runnable {
     private Thread playerThread;
 
     /**
-     * The thread of the AI (computer) player (an additional thread used to generate key presses).
+     * The thread of the AI (computer) player (an additional thread used to generate
+     * key presses).
      */
     private Thread aiThread;
 
@@ -67,7 +68,8 @@ public class Player implements Runnable {
      * @param dealer - the dealer object.
      * @param table  - the table object.
      * @param id     - the id of the player.
-     * @param human  - true iff the player is a human player (i.e. input is provided manually, via the keyboard).
+     * @param human  - true iff the player is a human player (i.e. input is provided
+     *               manually, via the keyboard).
      */
     public Player(Env env, Dealer dealer, Table table, int id, boolean human) {
         this.env = env;
@@ -75,54 +77,75 @@ public class Player implements Runnable {
         this.id = id;
         this.human = human;
 
-        //Vars we added:
+        // Vars we added:
         this.dealer = dealer;
         this.playerTokensCardsList = new LinkedList<Integer>();
         this.playerActionsList = new LinkedList<Integer>();
     }
 
+    // Added methods by me
+    public List<Integer> getPlayerTokensCardsList() {
+        return this.playerTokensCardsList;
+    }
+
+    public List<Integer> getPlayerActionsList() {
+        return this.playerActionsList;
+    }
+
     /**
-     * The main player thread of each player starts here (main loop for the player thread).
+     * The main player thread of each player starts here (main loop for the player
+     * thread).
      */
     @Override
     public void run() {
         playerThread = Thread.currentThread();
         env.logger.info("thread " + Thread.currentThread().getName() + " starting.");
-        if (!human) createArtificialIntelligence();
+        if (!human)
+            createArtificialIntelligence();
 
         while (!terminate) {
             // TODO implement main player loop
             while (!playerActionsList.isEmpty()) {
                 int currentCard = playerActionsList.remove(0);
+                System.out.println("hi");
                 if (playerTokensCardsList.contains(currentCard)) {
                     table.removeToken(this.id, table.cardToSlot[currentCard]);
                     playerTokensCardsList.remove(playerTokensCardsList.indexOf(currentCard));
-                } 
-                else {
+                } else {
                     if (playerTokensCardsList.size() < env.config.featureSize) {
                         table.placeToken(this.id, table.cardToSlot[currentCard]);
                         playerTokensCardsList.add(currentCard);
                     }
                 }
-                if (playerTokensCardsList.size() == env.config.featureSize) { //Notify the dealer and wait until the dealder checks if it is a legal set or not
-                    synchronized(dealer) {
+                if (playerTokensCardsList.size() == env.config.featureSize) { // Notify the dealer and wait until the
+                                                                              // dealder checks if it is a legal set or
+                                                                              // not
+                    synchronized (dealer) {
                         Dealer.legalSetCheckList.add(new LinkedList<Integer>(playerTokensCardsList));
                         Dealer.legalSetOrderList.add(this.id);
 
                         try {
                             dealer.wait();
-                        } catch(InterruptedException e) {};
-                    } 
+                        } catch (InterruptedException e) {
+                        }
+                        ;
+                    }
                 }
             }
         }
-        if (!human) try { aiThread.join(); } catch (InterruptedException ignored) {}
+        if (!human)
+            try {
+                aiThread.join();
+            } catch (InterruptedException ignored) {
+            }
         env.logger.info("thread " + Thread.currentThread().getName() + " terminated.");
     }
 
     /**
-     * Creates an additional thread for an AI (computer) player. The main loop of this thread repeatedly generates
-     * key presses. If the queue of key presses is full, the thread waits until it is not full.
+     * Creates an additional thread for an AI (computer) player. The main loop of
+     * this thread repeatedly generates
+     * key presses. If the queue of key presses is full, the thread waits until it
+     * is not full.
      */
     private void createArtificialIntelligence() {
         // note: this is a very, very smart AI (!)
@@ -131,8 +154,11 @@ public class Player implements Runnable {
             while (!terminate) {
                 // TODO implement player key press simulator
                 try {
-                    synchronized (this) { wait(); }
-                } catch (InterruptedException ignored) {}
+                    synchronized (this) {
+                        wait();
+                    }
+                } catch (InterruptedException ignored) {
+                }
             }
             env.logger.info("thread " + Thread.currentThread().getName() + " terminated.");
         }, "computer-" + id);
@@ -153,12 +179,12 @@ public class Player implements Runnable {
      */
     public void keyPressed(int slot) {
         // TODO implement
-        //if (!playerActionsList.contains(table.slotToCard[slot])) {
-            if (playerActionsList.size() >= env.config.featureSize)
-                return;
+        if ((dealer.getPlayersThreads()[this.id]).getState() == Thread.State.WAITING)
+            return;
+        if (playerActionsList.size() >= env.config.featureSize)
+            return;
 
-                playerActionsList.add(table.slotToCard[slot]);
-        //}
+        playerActionsList.add(table.slotToCard[slot]);
     }
 
     /**
@@ -175,7 +201,8 @@ public class Player implements Runnable {
         env.ui.setFreeze(this.id, env.config.pointFreezeMillis);
         try {
             Thread.sleep(env.config.pointFreezeMillis);
-        } catch (InterruptedException e) {}
+        } catch (InterruptedException e) {
+        }
     }
 
     /**
@@ -186,7 +213,11 @@ public class Player implements Runnable {
         env.ui.setFreeze(this.id, env.config.penaltyFreezeMillis);
         try {
             Thread.sleep(env.config.penaltyFreezeMillis);
-        } catch (InterruptedException e) {}
+        } catch (InterruptedException e) {
+        }
+        synchronized (dealer) {
+            dealer.notify();
+        }
     }
 
     public int score() {
