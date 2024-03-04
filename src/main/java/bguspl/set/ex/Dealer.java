@@ -3,6 +3,7 @@ package bguspl.set.ex;
 import bguspl.set.Env;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -20,6 +21,8 @@ public class Dealer implements Runnable {
     private Thread dealerThread; // the dealer's thread
     private Thread[] playersThreads; // all of the players threads
     private long startTime; // when we start the round (Usually equals to Long.Max\0 to tell it to reset)
+    private int playerIdWithSet;
+    private boolean showHint; // if i showed the hint in this round
     public static List<LinkedList<Integer>> legalSetCheckList; // All the sets we need to check if legal, by order
     public static List<Integer> legalSetOrderList;// All the IDs of the players, with the order of legalSetCheckList
 
@@ -53,6 +56,7 @@ public class Dealer implements Runnable {
         this.env = env;
         this.table = table;
         this.players = players;
+        this.terminate = false;
         deck = IntStream.range(0, env.config.deckSize).boxed().collect(Collectors.toList());
 
         // Vars we added:
@@ -61,6 +65,8 @@ public class Dealer implements Runnable {
         legalSetOrderList = new LinkedList<Integer>();
         this.playersThreads = new Thread[players.length];
         this.startTime = Long.MAX_VALUE;
+        this.playerIdWithSet = -1; // no set
+        this.showHint = false;
     }
 
     /*
@@ -70,8 +76,16 @@ public class Dealer implements Runnable {
         return this.dealerThread;
     }
 
+    public Player[] getPlayers() {
+        return this.players;
+    }
+
     public Thread[] getPlayersThreads() {
         return this.playersThreads;
+    }
+
+    public List<Integer> getDeck() {
+        return this.deck;
     }
 
     /**
@@ -84,10 +98,10 @@ public class Dealer implements Runnable {
         env.ui.setCountdown(env.config.turnTimeoutMillis, false); // We started the game with 60 seconds on the clock
 
         // creating the players threads and running them
-        for (int i = 0; i < players.length; i++) {
-            Thread playerThread = new Thread(players[i], "Player " + players[i].id);
-            playersThreads[i] = playerThread;
-            playerThread.start();
+
+        for (Player p : players) {
+            playersThreads[p.getId()] = new Thread(p, "Player " + p.getId());
+            playersThreads[p.getId()].start();
         }
 
         // main thread loop that determines a full game round while there cards left or
@@ -120,7 +134,19 @@ public class Dealer implements Runnable {
      * Called when the game should be terminated.
      */
     public void terminate() {
-        // TODO implement
+        for (int i = playersThreads.length - 1; i >= 0; i--) {
+            synchronized (players[i]) {
+                players[i].notify();
+            }
+            players[i].setPlay(true);
+            players[i].terminate();
+            playersThreads[i].interrupt();
+            try {
+                playersThreads[i].join();
+            } catch (InterruptedException ignore) {
+            }
+        }
+        this.terminate = true;
     }
 
     /**
@@ -137,50 +163,39 @@ public class Dealer implements Runnable {
      */
     private void removeCardsFromTable() {
         synchronized (table) {
+            List<Integer> removeSets = new LinkedList<Integer>();
+
             // no sets to check by the dealer, so exit
             if (legalSetOrderList.isEmpty())
                 return;
 
-            // giving penalty to all bad sets, so we can delete them lateron without
-            // worrying
-            for (int i = 0; i < legalSetCheckList.size(); i++) {
-                List<Integer> set = legalSetCheckList.get(i);
-                Integer[] cardsArrInteger = set.toArray(new Integer[set.size()]); // convert list to array
-                int[] cardTokens = Arrays.stream(cardsArrInteger).mapToInt(Integer::intValue).toArray();
-                if (!env.util.testSet(cardTokens)) {
-                    for (int card : set) {
-                        if (table.cardToSlot[card] != null)
-                            table.removeToken(legalSetOrderList.get(i), table.cardToSlot[card]);
-                    }
-                    players[legalSetOrderList.get(i)].getPlayerTokensCardsList().clear();
-                    players[legalSetOrderList.get(i)].penalty();
-                    // We release the player, so we can define a different block based on time when
-                    // called penalty. (On the start of the player main thread)
-                    players[legalSetOrderList.get(i)].setPlay(true);
-                    synchronized (players[legalSetOrderList.get(i)]) {
-                        players[legalSetOrderList.get(i)].notify();
-                        players[legalSetOrderList.get(i)].setPlay(true);
-                    }
-                    System.out.println("Player " + legalSetOrderList.get(i)
-                            + " will be released to recieve penalty instantly after.");
-                }
-            }
-
+            int[] cardTokens = new int[0];
+            List<Integer> set;
+            int playerIdSet = 0;
             // checking all the sets, by fifo order, if they are legal. If they are legal
             // handle them accordingly
             for (int i = 0; i < legalSetCheckList.size(); i++) {
-                List<Integer> set = legalSetCheckList.get(i);
-                Integer[] cardsArrInteger = set.toArray(new Integer[set.size()]); // convert list to array
-                int[] cardTokens = Arrays.stream(cardsArrInteger).mapToInt(Integer::intValue).toArray();
+                set = legalSetCheckList.get(i);
+                playerIdSet = legalSetOrderList.get(i);
                 // set is smaller than 3. Its irrelevant so we continue to the next set
                 if (set.size() < env.config.featureSize) {
+                    removeSets.add(legalSetOrderList.get(i)); // only 2 cards? we will remove this set after this
+                                                              // iteration
                     continue;
+                } else {
+                        cardTokens = Arrays.stream(set.toArray(new Integer[set.size()])).mapToInt(Integer::intValue)
+                                .toArray();
+                    ;
                 }
                 // Checking if its a legal set
                 if (env.util.testSet(cardTokens)) {
                     for (int card : cardTokens) {
-                        env.ui.removeTokens(table.cardToSlot[card]);
-                        players[legalSetOrderList.get(i)].getPlayerTokensCardsList().clear();
+                        if (table.cardToSlot[card] != null)
+                            env.ui.removeTokens(table.cardToSlot[card]);
+                        for (Player p : players) {
+                            if (p.getPlayerTokensCardsList().contains(card))
+                                p.getPlayerTokensCardsList().remove(p.getPlayerTokensCardsList().indexOf(card));
+                        }
                         // Its a legal set, we need to remove similar cards from future sets
                         for (int j = 0; j < legalSetCheckList.size(); j++) {
                             if (legalSetCheckList.get(j).contains(card)) {
@@ -189,22 +204,49 @@ public class Dealer implements Runnable {
                         }
                         table.removeCard(table.cardToSlot[card]);
                     }
-                    players[legalSetOrderList.get(i)].point();
+                    playerIdWithSet = playerIdSet;
+                    players[playerIdSet].point();
                     env.ui.setCountdown(env.config.turnTimeoutMillis, false); // Fixes the 'not showing 60 on reset bug'
 
-                    // usually, when placing cards we unblock the player and reset time, because there no more
+                    // usually, when placing cards we unblock the player and reset time, because
+                    // there no more
                     // cards left, we will do it here.
                     if ((deck.size() + table.countCards()) < 12) {
-                        // All the cards on the table, so we can unblock the players to play
-                        for (Player p : players) {
-                            p.setPlay(true);
-                            synchronized (p) {
-                                p.notify();
-                            }
+                        // All the cards on the table, so we unblock the player with the specific set
+                        // found
+                        players[playerIdWithSet].setPlay(true);
+                        synchronized (players[playerIdWithSet]) {
+                            players[playerIdWithSet].notify();
                         }
                         startTime = 0;
-                        System.out.println("Releasing all players from blocked, because all cards on the table (Last cards)");
+                        // System.out.println("Releasing all players from blocked, because all cards on
+                        // the table (Last cards)");
                     }
+                    removeSets.add(playerIdSet); // legal set, we will remove this set after this iteration
+
+                    for (int remove : removeSets) {
+                        legalSetCheckList.remove(legalSetOrderList.indexOf(remove));
+                        legalSetOrderList.remove(legalSetOrderList.indexOf(remove));
+                    }
+                    return;
+                } else {
+                    players[playerIdSet].getPlayerTokensCardsList().clear();
+                    players[playerIdSet].penalty();
+                    // We release the player, so we can define a different block based on time when
+                    // called penalty. (On the start of the player main thread)
+                    players[playerIdSet].setPlay(true);
+                    synchronized (players[playerIdSet]) {
+                        players[playerIdSet].notify();
+                        players[playerIdSet].setPlay(true);
+                    }
+                    for (int card : set) {
+                        if (table.cardToSlot[card] != null)
+                            table.removeToken(playerIdSet, table.cardToSlot[card]);
+                    }
+                    removeSets.add(playerIdSet); // we gave him penalty, so we remove this set after this
+                                                 // iteration
+                    // System.out.println("Player " + legalSetOrderList.get(i)
+                    // + " will be released to recieve penalty instantly after.");
                 }
             }
             // clearing the list used tokens
@@ -233,20 +275,22 @@ public class Dealer implements Runnable {
         List<Integer> positions = new LinkedList<Integer>();
         for (int i = 0; i < env.config.tableSize; i++)
             positions.add(i);
-
-        // adding the needed cards
-        for (int i = 0; i < env.config.tableSize; i++) {
-            if (deck.size() > 0) {
-                int randomPosition = ThreadLocalRandom.current().nextInt(0, positions.size()); // Random position
-                // Game started, we need to put all the 12 cards on random places
-                if (startTime == Long.MAX_VALUE) {
-                    int cardId = deck.remove(0);
-                    table.placeCard(cardId, positions.remove(randomPosition));
-                }
-                // adding cards to missing places after a point was made
-                else if (table.slotToCard[i] == null) {
-                    int cardId = deck.remove(0);
-                    table.placeCard(cardId, i);
+        synchronized (table) {
+            // adding the needed cards
+            for (int i = 0; i < env.config.tableSize; i++) {
+                if (deck.size() > 0) {
+                    int randomPosition = ThreadLocalRandom.current().nextInt(0, positions.size()); // Random position
+                    // Game started, we need to put all the 12 cards on random places
+                    if (startTime == Long.MAX_VALUE) {
+                        Collections.shuffle(deck);
+                        int cardId = deck.remove(0);
+                        table.placeCard(cardId, positions.remove(randomPosition));
+                    }
+                    // adding cards to missing places after a point was made
+                    else if (table.slotToCard[i] == null) {
+                        int cardId = deck.remove(0);
+                        table.placeCard(cardId, i);
+                    }
                 }
             }
         }
@@ -261,7 +305,8 @@ public class Dealer implements Runnable {
                 p.notify();
             }
         }
-        System.out.println("Releasing all players from blocked, because all cards on the table");
+        // System.out.println("Releasing all players from blocked, because all cards on
+        // the table");
     }
 
     /**
@@ -271,7 +316,7 @@ public class Dealer implements Runnable {
     private void sleepUntilWokenOrTimeout() {
 
         // sleep every second (almost), if last 5 seconds dont sleep
-        if (reshuffleTime - System.currentTimeMillis() > env.config.endGamePauseMillies) {
+        if (reshuffleTime - System.currentTimeMillis() > env.config.turnTimeoutWarningMillis) {
             try {
                 Thread.sleep(800);
             } catch (InterruptedException e) {
@@ -285,6 +330,7 @@ public class Dealer implements Runnable {
     private void updateTimerDisplay(boolean reset) {
 
         long timeNow = System.currentTimeMillis();
+        final int timeForHint = 15000;
 
         // start time is on default time, or 60 seconds passed, it will trigger the game
         // to reset the round here
@@ -292,22 +338,37 @@ public class Dealer implements Runnable {
         if (startTime == Long.MAX_VALUE || startTime == 0) {
             reshuffleTime = env.config.turnTimeoutMillis + System.currentTimeMillis();
             startTime = timeNow;
+            this.showHint = false;
         }
         // time ended, block players
         else if (System.currentTimeMillis() >= reshuffleTime) {
             for (Player p : players) {
                 p.setPlay(false);
-                System.out.println("Player " + p.getId() + " is blocked, because time ended.");
+                // System.out.println("Player " + p.getId() + " is blocked, because time
+                // ended.");
             }
+        }
+
+        // deal with hints
+        if (env.config.hints == true && showHint == false
+                && (reshuffleTime - System.currentTimeMillis()) < timeForHint) {
+            table.hints();
+            this.showHint = true;
         }
 
         // still not 5 seconds left, so we display the left time without warning. Else
         // otherwise
-        if (reshuffleTime - System.currentTimeMillis() > env.config.endGamePauseMillies)
+        if (reshuffleTime - System.currentTimeMillis() > env.config.turnTimeoutWarningMillis)
             env.ui.setCountdown(reshuffleTime - System.currentTimeMillis(), false);
-        else
-            env.ui.setCountdown(reshuffleTime - System.currentTimeMillis(), true);
+        else {
+            if (reshuffleTime - System.currentTimeMillis() > 0)
+                env.ui.setCountdown(reshuffleTime - System.currentTimeMillis(), true);
+            else
+                env.ui.setCountdown(0, false);
+        }
 
+        if (env.config.pointFreezeMillis == 0 && env.config.penaltyFreezeMillis == 0)
+            return;
         // passing all the players and checking if they are freezed, if so, update their
         // freeze time until its finished
         for (Player p : players) {
@@ -329,22 +390,20 @@ public class Dealer implements Runnable {
      * Returns all the cards from the table to the deck.
      */
     private void removeAllCardsFromTable() {
-        synchronized (players) {
-
-        }
         boolean lastCards = false;
         List<Integer> positions = new LinkedList<Integer>();
         int cardsLeft = table.countCards();
+        env.ui.removeTokens();
         for (int i = 0; i < cardsLeft; i++)
             positions.add(i);
-        // remove all tokens
-        env.ui.removeTokens();
         // reset player vars
         for (Player p : players)
             p.resetAll();
         // reset dealer's lists
         legalSetCheckList.clear();
         legalSetOrderList.clear();
+        // reset hint value
+        showHint = false;
         // adding back to the deck the left visible cards
         for (int i = 0; i < table.slotToCard.length; i++) {
             if (table.slotToCard[i] != null)
@@ -352,27 +411,32 @@ public class Dealer implements Runnable {
         }
 
         // removing cards from grid
-        for (int i = 0; i < cardsLeft; i++) {
-            int randomPosition = ThreadLocalRandom.current().nextInt(0, positions.size()); // Random position
-            // all cards are here, so remove them randomly
-            if (cardsLeft == 12)
-                table.removeCard(positions.get(randomPosition));
-            // we don't have 12 cards, means we are at the end of the game so we will deal
-            // it after the loop
-            else {
-                lastCards = true;
-                break;
+        synchronized (table) {
+            for (int i = 0; i < cardsLeft; i++) {
+                int randomPosition = ThreadLocalRandom.current().nextInt(0, positions.size()); // Random position
+                // all cards are here, so remove them randomly
+                if (cardsLeft == 12)
+                    table.removeCard(positions.get(randomPosition));
+                // we don't have 12 cards, means we are at the end of the game so we will deal
+                // it after the loop
+                else {
+                    lastCards = true;
+                    break;
+                }
+                positions.remove(randomPosition);
             }
-            positions.remove(randomPosition);
-        }
-        // last cards, if they are visible, remove them from the correct slots
-        if (lastCards) {
-            for (int i = 0; i < table.slotToCard.length; i++) {
-                if (table.slotToCard[i] != null)
-                    table.removeCard(i);
+            // last cards, if they are visible, remove them from the correct slots
+            if (lastCards) {
+                for (int i = 0; i < table.slotToCard.length; i++) {
+                    if (table.slotToCard[i] != null)
+                        table.removeCard(i);
+                }
             }
+            // remove all tokens
+            env.ui.removeTokens();
+
+            startTime = Long.MAX_VALUE;
         }
-        startTime = Long.MAX_VALUE;
     }
 
     /**
@@ -390,11 +454,16 @@ public class Dealer implements Runnable {
             if (players[i].score() == biggestScore)
                 count++;
         int[] playersIds = new int[count];
+        int winners = 0;
         // array with all the winner players id
-        for (int i = 0; i < players.length; i++)
-            if (players[i].score() == biggestScore)
-                playersIds[i] = players[i].getId();
+        for (int i = 0; i < players.length; i++) {
+            if (players[i].score() == biggestScore) {
+                playersIds[winners] = players[i].getId();
+                winners++;
+            }
+        }
         // announce to the grid the winners
         env.ui.announceWinner(playersIds);
+        terminate();
     }
 }

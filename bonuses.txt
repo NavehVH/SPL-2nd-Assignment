@@ -12,13 +12,18 @@ with a short description of:
 
 1. Fully supporting all configuration fields and avoiding the use of magic numbers
 
-We are not entitled to this bonus.
+(1). When we needed to use values for the game that you defined, we have entered the env.config to use them.
+(2). You have used the config file values all around the program. And we used it Dealer, Player and table.
+(3). Each time we added a new code, we have tested if it works correctly. If it wasn't we fixed it by trial and error of understanding the problem.
 
 --------------------
 
 2. Terminating all threads (that you created) gracefully and in reverse order to the order they were created in.
 
-We are not entitled to this bonus.
+(1). We created the dealer thread first. When we created the player threads we inserted them into an array and when we terminated them we did it in the revesed order.
+Afterthat we terminated the dealer thread.
+(2). It was used in terminate method in dealer which called terminate method in players.
+(3). We used prints in order to check the order they were created and terminated.
 
 --------------------
 
@@ -35,4 +40,16 @@ We are not entitled to this bonus.
 changed on the display, key input needs to be handled, etc.) and the only threads created by you are:
 1 thread per player + 1 additional thread for non-human players.
 
-We are not entitled to this bonus.
+(1).At the beginning, all the players are blocked from entering keys. After all the cards on the table they are unblocked to play.
+If a player has 3 tokens, he is blocked from action and waking up the dealer.
+The dealer, which meanwhile sleeps every second and updates the timer and check if the game ended afterwards. When he is "waking up" he is interrupted which makes him unsleep,
+and in removeCardsFromTable he checks if there is a legal set, if so, gives him the correct penalty to sleep and unblock him afterwards.
+When the timer ends, it blocks all the players from action, and reset the round. If there sets left in the deck, it will do everything again as we wrote.
+
+Also, we have used synchronization mainly on the table in required places to block player from playing when important things needs to be finished. (For exmaple while the dealer removes 3
+cards of a set).
+
+Everything we did allowed us to make sure that the threads do not wake up unless some actual job needs to be done.
+
+(2).It was used in Dealer and Player class, in most methods. Where we needed to sleep\wake\notify or use synchronization.
+(3).Each time we added a new code, we have tested if it works correctly. If it wasn't we fixed it by trial and error of understanding the problem and using prints.
