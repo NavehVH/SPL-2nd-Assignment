@@ -3,26 +3,13 @@ BGU System Programming (SPL) course 2nd assignment. Written in Java and build wi
 
 This is an implementation of the [card game Set](https://en.wikipedia.org/wiki/Set_(card_game)) with GUI, including PvP mode and optional bot players.
 
-<img src="Images/Set%20logo.png" width="400" height="400">
-
-# How To Build
-1. Clone the repository to your local machine.
-2. Navigate to the project directory in your terminal.
-3. Compile the source files using the following Maven command:
-
-> mvn clean compile exec:java
-
-# Project Overview
-## Project Objectives
-The goal of the assignment is to practice concurrent multi-threaded programming on Java environment.
-
 ## Features
 - The game support up to 2 human players. Key layout:
 
 ![Key layout](/Images/Key%20layout.png)
 
 - Up to 4 bot players (4 players overall)
-- Configurable game settings like time for each round, number of players, key layout, font size and more. Visit the Set Game [Config class](Skeleton/src/main/java/bguspl/set/Config.java) for more info.
+- Configurable game settings like time for each round, number of players, key layout, font size and more. Visit the Set Game [Config class](src/main/java/bguspl/set/Config.java) for more info.
 - Optional hints for available sets on the board.
 
 
@@ -62,3 +49,14 @@ The game will continue as long as there is a legal set to be found in the remain
 ## System Requirements
 - Java
 - Maven version 3.6.3 or later
+
+# How To Build
+1. Clone the repository to your local machine.
+2. Navigate to the project directory in your terminal.
+3. Compile the source files using the following Maven command:
+
+> mvn clean compile exec:java
+
+# Project Overview
+## Project Objectives
+The goal of the assignment is to practice concurrent multi-threaded programming on Java environment.
